@@ -1,0 +1,993 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Reaction Time Test</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&family=Space+Mono:wght@400;700&display=swap');
+
+  /* ── CSS Variables ─────────────────────────────────────────────────── */
+  :root {
+    --bg:           #07090f;
+    --surface:      #0e1219;
+    --surface2:     #141923;
+    --border:       #1c2535;
+    --text:         #e8f0fe;
+    --muted:        #5a7090;
+    --dimmer:       #2a3a50;
+
+    /* States */
+    --idle-bg:      #0e1219;
+    --idle-glow:    rgba(80,120,200,0.15);
+    --wait-bg:      #160a0a;
+    --wait-accent:  #e53935;
+    --wait-glow:    rgba(229,57,53,0.35);
+    --go-bg:        #071610;
+    --go-accent:    #00e676;
+    --go-glow:      rgba(0,230,118,0.5);
+    --soon-bg:      #160c00;
+    --soon-accent:  #ff9800;
+    --soon-glow:    rgba(255,152,0,0.4);
+
+    /* Leaderboard warm */
+    --gold:   #ffd700;
+    --orange: #ff8c00;
+    --peach:  #ffb347;
+    --cream:  #fff3e0;
+    --lb-bg:  #190f02;
+    --lb-card:#1e1204;
+    --lb-bdr: #3a2200;
+  }
+
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  html { scroll-behavior: smooth; }
+
+  body {
+    min-height: 100vh;
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Space Grotesk', sans-serif;
+    overflow-x: hidden;
+  }
+
+  /* ── Noise texture overlay ─────────────────────────────────────────── */
+  body::before {
+    content: '';
+    position: fixed; inset: 0; z-index: 0;
+    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)' opacity='0.04'/%3E%3C/svg%3E");
+    pointer-events: none;
+    opacity: .5;
+  }
+
+  .page {
+    position: relative; z-index: 1;
+    max-width: 720px;
+    margin: 0 auto;
+    padding: 28px 18px 72px;
+    display: flex;
+    flex-direction: column;
+    gap: 22px;
+  }
+
+  /* ── Header ────────────────────────────────────────────────────────── */
+  header { text-align: center; padding: 4px 0; }
+
+  .logo {
+    font-family: 'Space Mono', monospace;
+    font-size: clamp(1.5rem, 5vw, 2.2rem);
+    font-weight: 700;
+    letter-spacing: -.02em;
+    color: var(--text);
+    line-height: 1;
+  }
+  .logo span {
+    background: linear-gradient(90deg, #4fc3f7, #00e676);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+
+  .tagline {
+    font-size: .8rem;
+    color: var(--muted);
+    letter-spacing: .18em;
+    text-transform: uppercase;
+    margin-top: 8px;
+  }
+
+  /* ── Stats strip ───────────────────────────────────────────────────── */
+  .stats-row {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 10px;
+  }
+
+  .stat-box {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 16px 10px;
+    text-align: center;
+    position: relative;
+    overflow: hidden;
+    transition: border-color .3s;
+  }
+  .stat-box::after {
+    content: '';
+    position: absolute;
+    bottom: 0; left: 50%; transform: translateX(-50%);
+    height: 2px; width: 50%;
+    border-radius: 2px 2px 0 0;
+    background: #4fc3f7;
+    opacity: .5;
+  }
+  .stat-box.best-box::after  { background: var(--gold); }
+  .stat-box.avg-box::after   { background: var(--peach); }
+
+  .stat-label {
+    font-size: .6rem;
+    letter-spacing: .14em;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin-bottom: 7px;
+  }
+  .stat-val {
+    font-family: 'Space Mono', monospace;
+    font-size: clamp(1.1rem, 3vw, 1.55rem);
+    font-weight: 700;
+    color: var(--text);
+    line-height: 1;
+    transition: color .25s;
+  }
+  .stat-unit {
+    font-size: .65rem;
+    color: var(--muted);
+    margin-top: 3px;
+    letter-spacing: .06em;
+  }
+  .stat-box.best-box .stat-val { color: var(--gold); }
+  .stat-box.avg-box  .stat-val { color: var(--peach); }
+
+  /* ── Reaction arena ────────────────────────────────────────────────── */
+  .arena-wrap {
+    position: relative;
+    border-radius: 24px;
+    overflow: hidden;
+    /* outer glow driven by JS custom property */
+    box-shadow: 0 0 0 1px var(--border), 0 0 60px var(--arena-glow, transparent);
+    transition: box-shadow .35s ease;
+  }
+
+  .arena {
+    width: 100%;
+    min-height: clamp(220px, 38vw, 320px);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 14px;
+    cursor: pointer;
+    user-select: none;
+    -webkit-user-select: none;
+    position: relative;
+    overflow: hidden;
+    background: var(--surface);
+    transition: background .35s ease;
+
+    /* prevent accidental text selection on rapid click */
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  /* Radial gradient layer that animates with state */
+  .arena::before {
+    content: '';
+    position: absolute; inset: 0;
+    border-radius: inherit;
+    background: radial-gradient(ellipse at 50% 80%, var(--arena-radial, transparent) 0%, transparent 70%);
+    transition: background .35s ease;
+    pointer-events: none;
+  }
+
+  /* Pulse ring on GO */
+  .arena::after {
+    content: '';
+    position: absolute;
+    width: 200px; height: 200px;
+    border-radius: 50%;
+    border: 2px solid var(--go-accent);
+    opacity: 0;
+    pointer-events: none;
+  }
+  .arena.pulse::after {
+    animation: pulse-ring .55s ease-out forwards;
+  }
+  @keyframes pulse-ring {
+    0%   { transform: scale(.4); opacity: .9; }
+    100% { transform: scale(3);  opacity: 0;  }
+  }
+
+  /* State classes */
+  .arena.state-idle {
+    background: var(--idle-bg);
+    --arena-radial: rgba(80,130,220,.12);
+    cursor: default;
+  }
+  .arena.state-wait {
+    background: var(--wait-bg);
+    --arena-radial: rgba(229,57,53,.18);
+    cursor: default;
+  }
+  .arena.state-go {
+    background: var(--go-bg);
+    --arena-radial: rgba(0,230,118,.22);
+    cursor: crosshair;
+    animation: go-flash .3s ease;
+  }
+  @keyframes go-flash {
+    0%   { filter: brightness(2); }
+    100% { filter: brightness(1); }
+  }
+  .arena.state-result {
+    background: var(--surface);
+    --arena-radial: rgba(80,130,220,.1);
+    cursor: default;
+  }
+  .arena.state-soon {
+    background: var(--soon-bg);
+    --arena-radial: rgba(255,152,0,.18);
+    cursor: default;
+  }
+
+  /* Glow updates */
+  .arena-wrap.state-wait { --arena-glow: var(--wait-glow); }
+  .arena-wrap.state-go   { --arena-glow: var(--go-glow);   }
+  .arena-wrap.state-soon { --arena-glow: var(--soon-glow); }
+
+  /* ── Arena icon ── */
+  .arena-icon {
+    font-size: clamp(2.6rem, 7vw, 4rem);
+    line-height: 1;
+    transition: transform .3s cubic-bezier(.34,1.56,.64,1);
+    pointer-events: none;
+  }
+  .arena.state-go .arena-icon { transform: scale(1.15); }
+
+  /* ── Arena headline ── */
+  .arena-headline {
+    font-family: 'Space Mono', monospace;
+    font-size: clamp(1rem, 3.5vw, 1.5rem);
+    font-weight: 700;
+    letter-spacing: -.01em;
+    text-align: center;
+    pointer-events: none;
+    transition: color .3s;
+    padding: 0 16px;
+  }
+  .arena.state-wait .arena-headline { color: #ef9a9a; }
+  .arena.state-go   .arena-headline { color: var(--go-accent); text-shadow: 0 0 20px rgba(0,230,118,.6); }
+  .arena.state-soon .arena-headline { color: var(--soon-accent); }
+
+  .arena-sub {
+    font-size: clamp(.75rem, 2.2vw, .9rem);
+    color: var(--muted);
+    letter-spacing: .06em;
+    text-align: center;
+    pointer-events: none;
+    padding: 0 20px;
+  }
+
+  /* Reaction time readout inside arena */
+  .arena-result {
+    font-family: 'Space Mono', monospace;
+    font-size: clamp(2rem, 8vw, 3.6rem);
+    font-weight: 700;
+    color: var(--text);
+    line-height: 1;
+    pointer-events: none;
+    opacity: 0;
+    transform: scale(.7);
+    transition: opacity .3s, transform .35s cubic-bezier(.34,1.56,.64,1);
+  }
+  .arena-result.show {
+    opacity: 1;
+    transform: scale(1);
+  }
+  .arena-result .ms-label {
+    font-size: 40%;
+    color: var(--muted);
+    vertical-align: middle;
+    margin-left: 4px;
+  }
+
+  /* Result rating tag */
+  .rating-tag {
+    font-size: clamp(.7rem, 2vw, .85rem);
+    font-weight: 600;
+    letter-spacing: .1em;
+    text-transform: uppercase;
+    padding: 5px 14px;
+    border-radius: 50px;
+    pointer-events: none;
+    opacity: 0;
+    transform: translateY(8px);
+    transition: opacity .3s .15s, transform .3s .15s;
+  }
+  .rating-tag.show { opacity: 1; transform: none; }
+  .rating-tag.elite   { background: rgba(255,215,0,.15);  color: var(--gold);       border: 1px solid rgba(255,215,0,.3); }
+  .rating-tag.great   { background: rgba(0,230,118,.12);  color: var(--go-accent);  border: 1px solid rgba(0,230,118,.25); }
+  .rating-tag.good    { background: rgba(79,195,247,.12); color: #4fc3f7;           border: 1px solid rgba(79,195,247,.25); }
+  .rating-tag.average { background: rgba(255,152,0,.12);  color: var(--peach);      border: 1px solid rgba(255,152,0,.25); }
+  .rating-tag.slow    { background: rgba(239,83,80,.12);  color: #ef9a9a;           border: 1px solid rgba(239,83,80,.25); }
+
+  /* ── Control buttons ───────────────────────────────────────────────── */
+  .controls {
+    display: flex;
+    gap: 10px;
+  }
+
+  .btn {
+    flex: 1;
+    padding: 14px 20px;
+    border: none;
+    border-radius: 12px;
+    font-family: 'Space Grotesk', sans-serif;
+    font-size: .85rem;
+    font-weight: 700;
+    letter-spacing: .06em;
+    text-transform: uppercase;
+    cursor: pointer;
+    position: relative;
+    overflow: hidden;
+    transition: transform .15s, box-shadow .2s, opacity .2s;
+  }
+  .btn:active { transform: scale(.97); }
+  .btn::after {
+    content: '';
+    position: absolute; inset: 0;
+    background: rgba(255,255,255,.08);
+    opacity: 0;
+    transition: opacity .15s;
+  }
+  .btn:hover::after { opacity: 1; }
+  .btn:disabled { opacity: .35; cursor: not-allowed; transform: none !important; }
+
+  .btn-primary {
+    background: linear-gradient(135deg, #1a73e8, #0d47a1);
+    color: #fff;
+    box-shadow: 0 4px 18px rgba(26,115,232,.35);
+  }
+  .btn-primary:hover:not(:disabled) { box-shadow: 0 6px 26px rgba(26,115,232,.5); transform: translateY(-2px); }
+
+  .btn-ghost {
+    background: var(--surface);
+    color: var(--muted);
+    border: 1px solid var(--border);
+  }
+  .btn-ghost:hover:not(:disabled) { color: var(--text); border-color: #3a5070; }
+
+  /* ── Name input (for leaderboard) ─────────────────────────────────── */
+  .name-panel {
+    display: none;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    padding: 22px 20px;
+    text-align: center;
+    animation: fade-up .3s ease;
+    flex-direction: column;
+    align-items: center;
+    gap: 12px;
+  }
+  .name-panel.show { display: flex; }
+
+  @keyframes fade-up { from { opacity:0; transform: translateY(14px); } to { opacity:1; transform: none; } }
+
+  .name-panel p {
+    font-size: .9rem;
+    color: var(--peach);
+    letter-spacing: .04em;
+  }
+  .name-row {
+    display: flex;
+    gap: 8px;
+    width: 100%;
+    max-width: 340px;
+  }
+  .name-row input {
+    flex: 1;
+    background: var(--surface2);
+    border: 1px solid var(--lb-bdr);
+    border-radius: 10px;
+    color: var(--text);
+    font-family: 'Space Grotesk', sans-serif;
+    font-size: .95rem;
+    padding: 10px 14px;
+    outline: none;
+    transition: border-color .2s;
+  }
+  .name-row input:focus { border-color: var(--gold); }
+  .name-row input::placeholder { color: var(--dimmer); }
+
+  .btn-save {
+    padding: 10px 18px;
+    background: linear-gradient(135deg, var(--gold), var(--orange));
+    border: none;
+    border-radius: 10px;
+    color: #1a0900;
+    font-family: 'Space Grotesk', sans-serif;
+    font-size: .8rem;
+    font-weight: 700;
+    letter-spacing: .06em;
+    text-transform: uppercase;
+    cursor: pointer;
+    transition: transform .15s, box-shadow .2s;
+    box-shadow: 0 4px 14px rgba(255,165,0,.35);
+    white-space: nowrap;
+  }
+  .btn-save:hover { transform: translateY(-2px); box-shadow: 0 6px 20px rgba(255,165,0,.5); }
+
+  /* ── Leaderboard ───────────────────────────────────────────────────── */
+  .leaderboard {
+    background: var(--lb-bg);
+    border: 1px solid var(--lb-bdr);
+    border-radius: 20px;
+    padding: 22px;
+    position: relative;
+    overflow: hidden;
+  }
+  .leaderboard::before {
+    content: '';
+    position: absolute; top: 0; left: 0; right: 0;
+    height: 3px;
+    background: linear-gradient(90deg, var(--gold), var(--orange), var(--peach), var(--gold));
+  }
+
+  .lb-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 16px;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  .lb-title {
+    font-family: 'Space Mono', monospace;
+    font-size: .85rem;
+    font-weight: 700;
+    letter-spacing: .1em;
+    text-transform: uppercase;
+    background: linear-gradient(90deg, var(--gold), var(--peach));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+  .lb-actions { display: flex; gap: 8px; }
+
+  .btn-sm {
+    padding: 6px 12px;
+    border-radius: 8px;
+    border: none;
+    font-family: 'Space Grotesk', sans-serif;
+    font-size: .75rem;
+    font-weight: 600;
+    cursor: pointer;
+    letter-spacing: .04em;
+    transition: opacity .2s, transform .15s;
+  }
+  .btn-sm:hover { opacity: .8; transform: translateY(-1px); }
+  .btn-export { background: var(--lb-card); color: var(--peach); border: 1px solid var(--lb-bdr); }
+  .btn-clear  { background: rgba(180,40,40,.2); color: #ff7070; border: 1px solid rgba(180,40,40,.35); }
+
+  /* Inline confirm */
+  .confirm-bar {
+    display: none;
+    align-items: center;
+    gap: 10px;
+    background: rgba(160,30,30,.15);
+    border: 1px solid rgba(200,50,50,.4);
+    border-radius: 10px;
+    padding: 10px 14px;
+    margin-bottom: 12px;
+    flex-wrap: wrap;
+  }
+  .confirm-bar.show { display: flex; }
+  .confirm-bar p { font-size: .82rem; color: #ff9090; flex: 1; min-width: 150px; }
+  .confirm-btns { display: flex; gap: 8px; }
+  .btn-cy {
+    padding: 5px 13px; border-radius: 6px; border: none;
+    background: rgba(200,40,40,.5); color: #ffcaca;
+    font-size: .8rem; font-weight: 700; cursor: pointer;
+    font-family: 'Space Grotesk', sans-serif;
+    transition: background .15s;
+  }
+  .btn-cy:hover { background: rgba(220,50,50,.8); }
+  .btn-cn {
+    padding: 5px 13px; border-radius: 6px;
+    border: 1px solid var(--lb-bdr);
+    background: var(--lb-card); color: var(--muted);
+    font-size: .8rem; font-weight: 700; cursor: pointer;
+    font-family: 'Space Grotesk', sans-serif;
+    transition: background .15s;
+  }
+  .btn-cn:hover { background: var(--surface); color: var(--text); }
+
+  /* Entries */
+  .lb-list { display: flex; flex-direction: column; gap: 10px; }
+  .lb-empty {
+    text-align: center;
+    color: var(--dimmer);
+    font-size: .88rem;
+    padding: 24px 0;
+    letter-spacing: .08em;
+  }
+
+  .lb-entry {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    background: var(--lb-card);
+    border: 1px solid var(--lb-bdr);
+    border-radius: 14px;
+    padding: 14px 18px;
+    position: relative;
+    overflow: hidden;
+    animation: slide-in .3s ease;
+    transition: transform .2s;
+  }
+  @keyframes slide-in { from { opacity:0; transform: translateX(-14px); } to { opacity:1; transform: none; } }
+  .lb-entry:hover { transform: translateX(5px); }
+
+  /* Coloured left strip */
+  .lb-entry::before {
+    content: ''; position: absolute; left:0; top:0; bottom:0; width:3px;
+  }
+  .lb-entry:nth-child(1)::before { background: linear-gradient(to bottom,var(--gold),var(--orange)); }
+  .lb-entry:nth-child(2)::before { background: linear-gradient(to bottom,#c0c0c0,#808080); }
+  .lb-entry:nth-child(3)::before { background: linear-gradient(to bottom,#cd7f32,#8b4513); }
+  .lb-entry:nth-child(n+4)::before { background: var(--lb-bdr); }
+  .lb-entry:nth-child(1) { box-shadow: 0 0 16px rgba(255,215,0,.1), inset 0 0 28px rgba(255,165,0,.04); }
+
+  .lb-rank { font-size: 1.35rem; width: 34px; text-align: center; flex-shrink: 0; }
+  .lb-info { flex: 1; min-width: 0; }
+  .lb-name { font-size: .95rem; font-weight: 700; color: var(--cream); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .lb-date { font-size: .7rem; color: #a07040; margin-top: 2px; letter-spacing: .05em; }
+
+  .lb-score-wrap { text-align: right; flex-shrink: 0; }
+  .lb-ms {
+    font-family: 'Space Mono', monospace;
+    font-size: 1.25rem;
+    font-weight: 700;
+    line-height: 1;
+  }
+  .lb-entry:nth-child(1) .lb-ms { color: var(--gold); text-shadow: 0 0 10px rgba(255,215,0,.4); }
+  .lb-entry:nth-child(2) .lb-ms { color: #d8d8d8; }
+  .lb-entry:nth-child(3) .lb-ms { color: #cd7f32; }
+  .lb-entry:nth-child(n+4) .lb-ms { color: var(--peach); }
+  .lb-ms-label { font-size: .62rem; color: #a07040; letter-spacing: .1em; text-transform: uppercase; margin-top: 2px; }
+
+  /* ── Toast ─────────────────────────────────────────────────────────── */
+  .toast {
+    position: fixed;
+    bottom: 24px; left: 50%; transform: translateX(-50%) translateY(70px);
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 50px;
+    padding: 10px 24px;
+    font-size: .83rem;
+    color: var(--go-accent);
+    box-shadow: 0 8px 28px rgba(0,0,0,.55);
+    transition: transform .35s cubic-bezier(.34,1.56,.64,1), opacity .35s;
+    opacity: 0;
+    z-index: 200;
+    letter-spacing: .06em;
+    white-space: nowrap;
+  }
+  .toast.show { transform: translateX(-50%) translateY(0); opacity: 1; }
+
+  /* ── Responsive ────────────────────────────────────────────────────── */
+  @media (max-width: 480px) {
+    .stats-row { grid-template-columns: repeat(3,1fr); gap: 7px; }
+    .controls { flex-direction: column; }
+    .btn { width: 100%; }
+    .lb-header { flex-direction: column; align-items: flex-start; }
+    .lb-entry { padding: 12px 14px; }
+  }
+</style>
+</head>
+<body>
+<div class="page">
+
+  <!-- Header -->
+  <header>
+    <div class="logo">Reaction <span>Time</span> Test</div>
+    <div class="tagline">How fast are your reflexes?</div>
+  </header>
+
+  <!-- Stats row -->
+  <div class="stats-row">
+    <div class="stat-box">
+      <div class="stat-label">Last</div>
+      <div class="stat-val" id="stat-last">–</div>
+      <div class="stat-unit">ms</div>
+    </div>
+    <div class="stat-box best-box">
+      <div class="stat-label">Best</div>
+      <div class="stat-val" id="stat-best">–</div>
+      <div class="stat-unit">ms</div>
+    </div>
+    <div class="stat-box avg-box">
+      <div class="stat-label">Average</div>
+      <div class="stat-val" id="stat-avg">–</div>
+      <div class="stat-unit">ms</div>
+    </div>
+  </div>
+
+  <!-- Reaction arena -->
+  <div class="arena-wrap state-idle" id="arena-wrap">
+    <div class="arena state-idle" id="arena">
+      <div class="arena-icon" id="arena-icon">⚡</div>
+      <div class="arena-headline" id="arena-headline">Ready to test?</div>
+      <div class="arena-sub" id="arena-sub">Press Start and wait for green</div>
+      <div class="arena-result" id="arena-result"></div>
+      <div class="rating-tag" id="rating-tag"></div>
+    </div>
+  </div>
+
+  <!-- Controls -->
+  <div class="controls">
+    <button class="btn btn-primary" id="btn-start">▶ Start</button>
+    <button class="btn btn-ghost"   id="btn-reset" disabled>↺ Reset</button>
+  </div>
+
+  <!-- Name capture for leaderboard -->
+  <div class="name-panel" id="name-panel">
+    <p>🏆 Top 5 time! Enter your name to save it:</p>
+    <div class="name-row">
+      <input type="text" id="player-name" placeholder="Your name…" maxlength="20" />
+      <button class="btn-save" id="btn-save">Save</button>
+    </div>
+  </div>
+
+  <!-- Leaderboard -->
+  <div class="leaderboard">
+    <div class="lb-header">
+      <div class="lb-title">🏆 Leaderboard</div>
+      <div class="lb-actions">
+        <button class="btn-sm btn-export" id="btn-export">⬇ Export</button>
+        <button class="btn-sm btn-clear"  id="btn-clear">🗑 Clear</button>
+      </div>
+    </div>
+
+    <!-- Inline confirm (no browser confirm() — works in sandboxed iframes) -->
+    <div class="confirm-bar" id="confirm-bar">
+      <p>⚠️ Clear all scores? Can't be undone.</p>
+      <div class="confirm-btns">
+        <button class="btn-cy" id="btn-cy">Yes, clear</button>
+        <button class="btn-cn" id="btn-cn">Cancel</button>
+      </div>
+    </div>
+
+    <div class="lb-list" id="lb-list"></div>
+  </div>
+
+</div><!-- /page -->
+
+<div class="toast" id="toast"></div>
+
+<script>
+  // ── Storage keys ────────────────────────────────────────────────────
+  const KEY_LB      = 'rtt_leaderboard_v1';
+  const KEY_BEST    = 'rtt_best_v1';
+  const KEY_HISTORY = 'rtt_history_v1';   // array of past times for average
+  const MEDALS = ['🥇','🥈','🥉'];
+  const MAX_HISTORY = 20;  // keep last 20 times for average calc
+
+  // ── DOM refs ─────────────────────────────────────────────────────────
+  const arena      = document.getElementById('arena');
+  const arenaWrap  = document.getElementById('arena-wrap');
+  const arenaIcon  = document.getElementById('arena-icon');
+  const arenaHL    = document.getElementById('arena-headline');
+  const arenaSub   = document.getElementById('arena-sub');
+  const arenaRes   = document.getElementById('arena-result');
+  const ratingTag  = document.getElementById('rating-tag');
+  const btnStart   = document.getElementById('btn-start');
+  const btnReset   = document.getElementById('btn-reset');
+  const statLast   = document.getElementById('stat-last');
+  const statBest   = document.getElementById('stat-best');
+  const statAvg    = document.getElementById('stat-avg');
+  const namePanel  = document.getElementById('name-panel');
+  const playerName = document.getElementById('player-name');
+  const btnSave    = document.getElementById('btn-save');
+  const lbList     = document.getElementById('lb-list');
+  const btnExport  = document.getElementById('btn-export');
+  const btnClear   = document.getElementById('btn-clear');
+  const confirmBar = document.getElementById('confirm-bar');
+  const btnCy      = document.getElementById('btn-cy');
+  const btnCn      = document.getElementById('btn-cn');
+  const toastEl    = document.getElementById('toast');
+
+  // ── Game state ───────────────────────────────────────────────────────
+  // States: 'idle' | 'waiting' | 'go' | 'result' | 'soon'
+  let state       = 'idle';
+  let goTimestamp = null;   // when the screen turned green
+  let waitTimer   = null;   // timeout for the random delay
+  let lastTime    = null;   // most recent reaction time in ms
+
+  // Persistent data
+  let bestTime    = parseInt(localStorage.getItem(KEY_BEST) || '0') || null;
+  let history     = JSON.parse(localStorage.getItem(KEY_HISTORY) || '[]');
+  let leaderboard = JSON.parse(localStorage.getItem(KEY_LB) || '[]');
+
+  // ── Rating bands ─────────────────────────────────────────────────────
+  function getRating(ms) {
+    if (ms < 180) return { label: '⚡ Elite',   cls: 'elite'   };
+    if (ms < 230) return { label: '✅ Great',   cls: 'great'   };
+    if (ms < 280) return { label: '👍 Good',    cls: 'good'    };
+    if (ms < 350) return { label: '🙂 Average', cls: 'average' };
+    return               { label: '🐢 Slow',    cls: 'slow'    };
+  }
+
+  // ── Arena state switcher ─────────────────────────────────────────────
+  function setArenaState(newState) {
+    state = newState;
+    const states = ['state-idle','state-wait','state-go','state-result','state-soon'];
+    arena.classList.remove(...states);
+    arenaWrap.classList.remove(...states);
+    arena.classList.add(`state-${newState}`);
+    arenaWrap.classList.add(`state-${newState}`);
+  }
+
+  // ── Show idle ────────────────────────────────────────────────────────
+  function showIdle() {
+    setArenaState('idle');
+    arenaIcon.textContent    = '⚡';
+    arenaHL.textContent      = 'Ready to test?';
+    arenaSub.textContent     = 'Press Start and wait for green';
+    arenaRes.classList.remove('show');
+    ratingTag.classList.remove('show');
+    namePanel.classList.remove('show');
+    btnStart.disabled = false;
+    btnReset.disabled = true;
+  }
+
+  // ── Start flow ───────────────────────────────────────────────────────
+  function startGame() {
+    clearTimeout(waitTimer);
+    lastTime = null;
+    goTimestamp = null;
+    namePanel.classList.remove('show');
+
+    setArenaState('wait');
+    arenaIcon.textContent = '🔴';
+    arenaHL.textContent   = 'Wait…';
+    arenaSub.textContent  = 'Click when the screen turns green';
+    arenaRes.classList.remove('show');
+    ratingTag.classList.remove('show');
+
+    btnStart.disabled = true;
+    btnReset.disabled = false;
+
+    // Random delay: 2000–5000 ms
+    const delay = 2000 + Math.random() * 3000;
+    waitTimer = setTimeout(showGo, delay);
+  }
+
+  // ── Show green ───────────────────────────────────────────────────────
+  function showGo() {
+    setArenaState('go');
+    arenaIcon.textContent = '🟢';
+    arenaHL.textContent   = 'CLICK NOW!';
+    arenaSub.textContent  = 'Click or tap anywhere in this area';
+
+    // Trigger pulse animation
+    arena.classList.remove('pulse');
+    void arena.offsetWidth; // reflow to restart animation
+    arena.classList.add('pulse');
+
+    goTimestamp = performance.now();   // high-res timestamp
+  }
+
+  // ── Handle arena click ───────────────────────────────────────────────
+  function handleArenaClick() {
+    if (state === 'wait') {
+      // Clicked too early
+      clearTimeout(waitTimer);
+      setArenaState('soon');
+      arenaIcon.textContent = '⚠️';
+      arenaHL.textContent   = 'Too soon!';
+      arenaSub.textContent  = 'Wait for the green — press Reset or Start again';
+      btnStart.disabled = false;
+      return;
+    }
+
+    if (state === 'go') {
+      const reactionTime = Math.round(performance.now() - goTimestamp);
+      recordResult(reactionTime);
+      return;
+    }
+  }
+
+  // ── Record a valid result ────────────────────────────────────────────
+  function recordResult(ms) {
+    lastTime = ms;
+
+    // Update history
+    history.push(ms);
+    if (history.length > MAX_HISTORY) history.shift();
+    localStorage.setItem(KEY_HISTORY, JSON.stringify(history));
+
+    // Update best
+    if (!bestTime || ms < bestTime) {
+      bestTime = ms;
+      localStorage.setItem(KEY_BEST, bestTime);
+    }
+
+    // Show result in arena
+    setArenaState('result');
+    arenaIcon.textContent = '';
+    arenaHL.textContent   = '';
+    arenaSub.textContent  = '';
+
+    arenaRes.innerHTML = `${ms}<span class="ms-label">ms</span>`;
+    arenaRes.classList.add('show');
+
+    const rating = getRating(ms);
+    ratingTag.textContent = rating.label;
+    ratingTag.className   = `rating-tag ${rating.cls}`;
+    setTimeout(() => ratingTag.classList.add('show'), 20);
+
+    // Update stat boxes
+    updateStats();
+
+    btnStart.disabled = false;
+    btnReset.disabled = false;
+
+    // Check leaderboard eligibility
+    if (qualifiesForLeaderboard(ms)) {
+      setTimeout(() => {
+        namePanel.classList.add('show');
+        playerName.focus();
+      }, 400);
+    }
+  }
+
+  // ── Stats display ────────────────────────────────────────────────────
+  function updateStats() {
+    statLast.textContent = lastTime !== null ? lastTime : '–';
+    statBest.textContent = bestTime !== null ? bestTime : '–';
+    if (history.length > 0) {
+      const avg = Math.round(history.reduce((a,b) => a+b, 0) / history.length);
+      statAvg.textContent = avg;
+    } else {
+      statAvg.textContent = '–';
+    }
+  }
+
+  // ── Leaderboard helpers ──────────────────────────────────────────────
+  function qualifiesForLeaderboard(ms) {
+    if (leaderboard.length < 5) return true;
+    // Faster = lower ms = better, so qualifies if faster than worst
+    return ms < leaderboard[leaderboard.length - 1].ms;
+  }
+
+  function saveScore(name, ms) {
+    const date = new Date().toLocaleDateString('en-GB', { day:'2-digit', month:'short' });
+    leaderboard.push({ name: name.trim() || 'Anonymous', ms, date });
+    leaderboard.sort((a, b) => a.ms - b.ms);  // fastest first
+    leaderboard = leaderboard.slice(0, 5);
+    localStorage.setItem(KEY_LB, JSON.stringify(leaderboard));
+    renderLeaderboard();
+  }
+
+  function renderLeaderboard() {
+    lbList.innerHTML = '';
+    if (!leaderboard.length) {
+      lbList.innerHTML = '<div class="lb-empty">No scores yet. Be the first!</div>';
+      return;
+    }
+    leaderboard.forEach((entry, i) => {
+      const medal = MEDALS[i] || `#${i+1}`;
+      const el = document.createElement('div');
+      el.className = 'lb-entry';
+      el.innerHTML = `
+        <div class="lb-rank">${medal}</div>
+        <div class="lb-info">
+          <div class="lb-name">${sanitize(entry.name)}</div>
+          <div class="lb-date">${entry.date || ''}</div>
+        </div>
+        <div class="lb-score-wrap">
+          <div class="lb-ms">${entry.ms}</div>
+          <div class="lb-ms-label">ms</div>
+        </div>`;
+      lbList.appendChild(el);
+    });
+  }
+
+  function sanitize(str) {
+    return str.replace(/[<>"&]/g, c =>
+      ({'<':'&lt;','>':'&gt;','"':'&quot;','&':'&amp;'})[c]);
+  }
+
+  // ── Toast ─────────────────────────────────────────────────────────────
+  let toastTimer;
+  function showToast(msg) {
+    toastEl.textContent = msg;
+    toastEl.classList.add('show');
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => toastEl.classList.remove('show'), 2400);
+  }
+
+  // ── Wire events ───────────────────────────────────────────────────────
+  btnStart.addEventListener('click', startGame);
+
+  btnReset.addEventListener('click', () => {
+    clearTimeout(waitTimer);
+    showIdle();
+  });
+
+  // Arena click — only active for 'wait' and 'go' states
+  arena.addEventListener('click', () => {
+    if (state === 'wait' || state === 'go') handleArenaClick();
+  });
+  arena.addEventListener('touchstart', (e) => {
+    if (state === 'wait' || state === 'go') {
+      e.preventDefault();
+      handleArenaClick();
+    }
+  }, { passive: false });
+
+  // Keyboard: Space / Enter fires arena click when waiting or on go
+  document.addEventListener('keydown', (e) => {
+    if ((e.code === 'Space' || e.code === 'Enter') && (state === 'wait' || state === 'go')) {
+      e.preventDefault();
+      handleArenaClick();
+    }
+  });
+
+  // Save to leaderboard
+  btnSave.addEventListener('click', () => {
+    if (lastTime === null) return;
+    const name = playerName.value.trim() || 'Anonymous';
+    saveScore(name, lastTime);
+    namePanel.classList.remove('show');
+    playerName.value = '';
+    showToast(`✨ ${name} saved to leaderboard!`);
+  });
+  playerName.addEventListener('keydown', (e) => { if (e.key === 'Enter') btnSave.click(); });
+
+  // Clear
+  btnClear.addEventListener('click', () => confirmBar.classList.add('show'));
+  btnCn.addEventListener('click',    () => confirmBar.classList.remove('show'));
+  btnCy.addEventListener('click',    () => {
+    leaderboard = [];
+    localStorage.removeItem(KEY_LB);
+    renderLeaderboard();
+    confirmBar.classList.remove('show');
+    showToast('Leaderboard cleared.');
+  });
+
+  // Export
+  btnExport.addEventListener('click', () => {
+    if (!leaderboard.length) { showToast('Nothing to export.'); return; }
+    const blob = new Blob([JSON.stringify(leaderboard, null, 2)], { type: 'application/json' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = 'reaction_time_leaderboard.json';
+    a.click();
+    URL.revokeObjectURL(a.href);
+    showToast('Leaderboard exported!');
+  });
+
+  // ── Init ──────────────────────────────────────────────────────────────
+  function init() {
+    updateStats();
+    renderLeaderboard();
+    showIdle();
+  }
+
+  init();
+</script>
+</body>
+</html>
